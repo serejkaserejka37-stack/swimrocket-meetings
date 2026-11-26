@@ -27,8 +27,8 @@ Name: "russian"; MessagesFile: "compiler:Languages\Russian.isl"
 Source: "dist\SwimRocketMeetings\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
-Name: "{autodesktop}\SwimRocket Встречи"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\resources\swimrocket.ico"
-Name: "{group}\SwimRocket Встречи"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\resources\swimrocket.ico"
+Name: "{autodesktop}\SwimRocket Встречи"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\_internal\resources\swimrocket.ico"
+Name: "{group}\SwimRocket Встречи"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\_internal\resources\swimrocket.ico"
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "Запустить SwimRocket Встречи"; Flags: nowait postinstall skipifsilent
