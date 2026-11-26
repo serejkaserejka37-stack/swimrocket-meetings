@@ -1,5 +1,8 @@
 name: Build SwimRocket Meetings
 
+permissions:
+  contents: write
+
 on:
   push:
     branches: [main]
