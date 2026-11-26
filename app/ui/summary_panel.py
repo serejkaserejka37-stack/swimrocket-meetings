@@ -1,0 +1,116 @@
+"""Meeting summary display panel."""
+
+from PyQt6.QtCore import pyqtSignal
+from PyQt6.QtWidgets import (
+    QWidget, QVBoxLayout, QTextEdit, QPushButton, QHBoxLayout, QLabel,
+    QApplication, QLineEdit,
+)
+
+
+class SummaryPanel(QWidget):
+    regenerate_requested = pyqtSignal()
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._setup_ui()
+
+    def _setup_ui(self):
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+
+        self._status = QLabel("Итоги встречи ещё не сформированы.")
+        self._status.setStyleSheet("color: #667085; padding: 8px;")
+        layout.addWidget(self._status)
+
+        self._text = QTextEdit()
+        self._text.setReadOnly(False)
+        self._text.setStyleSheet(
+            "QTextEdit { background-color: #FFFFFF; color: #242841; "
+            "border: none; padding: 8px; font-size: 13px; }"
+        )
+        self._text.setVisible(False)
+        layout.addWidget(self._text)
+
+        # Instruction input for regeneration
+        self._instruction_input = QLineEdit()
+        self._instruction_input.setPlaceholderText(
+            "Необязательно: уточнение для новой обработки (например, имена участников)"
+        )
+        self._instruction_input.setStyleSheet(
+            "QLineEdit { background-color: #FFFFFF; color: #242841; "
+            "border: 1px solid #E4EAF3; border-radius: 4px; padding: 4px 8px; }"
+        )
+        self._instruction_input.setVisible(False)
+        layout.addWidget(self._instruction_input)
+
+        btn_row = QHBoxLayout()
+        self._copy_btn = QPushButton("Копировать")
+        self._copy_btn.clicked.connect(self._copy)
+        self._copy_btn.setVisible(False)
+        btn_row.addWidget(self._copy_btn)
+
+        self._gen_btn = QPushButton("Сформировать итоги")
+        self._gen_btn.clicked.connect(self.regenerate_requested.emit)
+        self._gen_btn.setVisible(False)
+        btn_row.addWidget(self._gen_btn)
+
+        btn_row.addStretch()
+        layout.addLayout(btn_row)
+
+    def set_summary(self, text):
+        self._text.setMarkdown(text)
+        self._text.setVisible(True)
+        self._copy_btn.setVisible(True)
+        self._gen_btn.setText("Сформировать заново")
+        self._gen_btn.setVisible(True)
+        self._instruction_input.setVisible(True)
+        self._status.setVisible(False)
+
+    def clear(self):
+        """Reset to initial empty state."""
+        self._text.clear()
+        self._text.setVisible(False)
+        self._copy_btn.setVisible(False)
+        self._gen_btn.setVisible(False)
+        self._instruction_input.clear()
+        self._instruction_input.setVisible(False)
+        self._status.setText("Итоги встречи ещё не сформированы.")
+        self._status.setVisible(True)
+
+    def set_ready(self):
+        """Show generate button when a transcript is available but no summary yet."""
+        if not self._text.isVisible():
+            self._gen_btn.setText("Сформировать итоги")
+            self._gen_btn.setVisible(True)
+
+    def set_loading(self):
+        self._status.setText("Формирую итоги встречи…")
+        self._status.setVisible(True)
+        self._gen_btn.setVisible(False)
+        self._instruction_input.setVisible(False)
+        self._text.setVisible(False)
+
+    def set_error(self, message="Не удалось сформировать итоги."):
+        """Restore from the loading state after a failed generation."""
+        if self._text.toPlainText():
+            # A previous summary exists — bring it back.
+            self._text.setVisible(True)
+            self._copy_btn.setVisible(True)
+            self._instruction_input.setVisible(True)
+            self._status.setVisible(False)
+            self._gen_btn.setText("Сформировать заново")
+        else:
+            self._status.setText(message)
+            self._status.setVisible(True)
+            self._gen_btn.setText("Сформировать итоги")
+        self._gen_btn.setVisible(True)
+
+    def get_text(self):
+        return self._text.toPlainText()
+
+    def get_instruction(self):
+        """Return the user's regeneration instruction, if any."""
+        return self._instruction_input.text().strip()
+
+    def _copy(self):
+        QApplication.clipboard().setText(self._text.toPlainText())

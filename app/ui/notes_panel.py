@@ -1,0 +1,94 @@
+import json
+from pathlib import Path
+from datetime import datetime
+
+from PyQt6.QtWidgets import (
+    QWidget, QVBoxLayout, QHBoxLayout, QTextEdit, QPushButton, QLabel
+)
+from PyQt6.QtCore import Qt
+
+
+class NotesPanel(QWidget):
+    """Panel for taking notes during a call/recording."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._session_dir = None
+        self._setup_ui()
+
+    def _setup_ui(self):
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+
+        # Header
+        header = QHBoxLayout()
+        title = QLabel("Заметки по встрече")
+        title.setObjectName("sectionHeader")
+        header.addWidget(title)
+        header.addStretch()
+
+        self.timestamp_btn = QPushButton("+ Время")
+        self.timestamp_btn.setToolTip("Вставить текущее время")
+        self.timestamp_btn.clicked.connect(self._insert_timestamp)
+        header.addWidget(self.timestamp_btn)
+
+        self.save_btn = QPushButton("Сохранить")
+        self.save_btn.clicked.connect(self.save_notes)
+        header.addWidget(self.save_btn)
+
+        layout.addLayout(header)
+
+        # Notes editor
+        self.editor = QTextEdit()
+        self.editor.setPlaceholderText(
+            "Type your call notes here...\n\n"
+            "Кнопка «Время» отмечает важные моменты."
+        )
+        layout.addWidget(self.editor)
+
+        self._recording_start = None
+
+    def set_session_dir(self, directory, keep_editor_text=False):
+        """Point the panel at a session directory.
+
+        keep_editor_text=True keeps whatever is typed (used when a recording
+        finishes: notes taken during the call belong to the new session).
+        Otherwise the editor shows the new session's saved notes — or empty,
+        so one recording's notes can't be saved into another.
+        """
+        self._session_dir = directory
+        if keep_editor_text:
+            return
+        notes_path = Path(directory) / "notes.txt" if directory else None
+        if notes_path is not None and notes_path.exists():
+            self.editor.setPlainText(notes_path.read_text(encoding="utf-8"))
+        else:
+            self.editor.clear()
+
+    def set_recording_start(self, start_time):
+        self._recording_start = start_time
+
+    def _insert_timestamp(self):
+        now = datetime.now().strftime("%H:%M:%S")
+        cursor = self.editor.textCursor()
+        cursor.insertText(f"\n[{now}] ")
+        self.editor.setTextCursor(cursor)
+        self.editor.setFocus()
+
+    def save_notes(self):
+        if not self._session_dir:
+            return
+        from app.utils.atomic_io import atomic_write_text
+        notes_path = Path(self._session_dir) / "notes.txt"
+        try:
+            atomic_write_text(notes_path, self.editor.toPlainText())
+        except OSError:
+            pass  # session dir may have been deleted; nothing to save into
+
+    def clear(self):
+        self.editor.clear()
+        self._session_dir = None
+        self._recording_start = None
+
+    def get_text(self):
+        return self.editor.toPlainText()

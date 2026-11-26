@@ -1,0 +1,26 @@
+"""Google Gemini API provider."""
+
+from app.ai.provider import AIProvider
+
+
+class GeminiProvider(AIProvider):
+    embed_model_id = "st:all-MiniLM-L6-v2"
+
+    def __init__(self, api_key: str, model: str = "gemini-2.5-flash"):
+        import google.generativeai as genai
+        genai.configure(api_key=api_key)
+        self._model = genai.GenerativeModel(model)
+
+    def complete(self, prompt: str, context: str = "") -> str:
+        full_prompt = f"{context}\n\n{prompt}" if context else prompt
+        response = self._model.generate_content(
+            full_prompt,
+            request_options={"timeout": 120.0},
+        )
+        return response.text
+
+    def embed(self, texts: list[str]) -> list[list[float]]:
+        from app.ai.provider import get_sentence_transformer
+        model = get_sentence_transformer("all-MiniLM-L6-v2")
+        embeddings = model.encode(texts)
+        return [e.tolist() for e in embeddings]

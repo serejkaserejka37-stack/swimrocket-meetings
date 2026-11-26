@@ -1,0 +1,15 @@
+[Unit]
+Description=SwimRocket Meetings public API
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/root/SwimRocket/meeting_processor
+ExecStart=/root/SwimRocket/meeting_processor/venv/bin/python /root/SwimRocket/meeting_processor/server/meeting_api.py
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

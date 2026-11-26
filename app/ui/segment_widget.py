@@ -1,0 +1,361 @@
+"""Individual transcript segment row widget."""
+from PyQt6.QtWidgets import (
+    QWidget, QHBoxLayout, QLabel, QLineEdit, QPushButton, QMenu
+)
+from PyQt6.QtCore import Qt, pyqtSignal, QSize, QPointF
+from PyQt6.QtGui import QAction, QIcon, QPixmap, QPainter, QColor, QPolygonF
+
+
+def _make_play_icon(size=20, color="#34C759"):
+    """Draw a filled triangle (play) icon."""
+    pixmap = QPixmap(size, size)
+    pixmap.fill(QColor(0, 0, 0, 0))
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    painter.setBrush(QColor(color))
+    painter.setPen(Qt.PenStyle.NoPen)
+    m = size * 0.25  # margin
+    triangle = QPolygonF([
+        QPointF(m, m * 0.6),
+        QPointF(size - m * 0.6, size / 2),
+        QPointF(m, size - m * 0.6),
+    ])
+    painter.drawPolygon(triangle)
+    painter.end()
+    return QIcon(pixmap)
+
+
+def _make_stop_icon(size=20, color="#F1642E"):
+    """Draw a filled square (stop) icon."""
+    pixmap = QPixmap(size, size)
+    pixmap.fill(QColor(0, 0, 0, 0))
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    painter.setBrush(QColor(color))
+    painter.setPen(Qt.PenStyle.NoPen)
+    m = size * 0.3
+    painter.drawRoundedRect(int(m), int(m), int(size - 2 * m), int(size - 2 * m), 2, 2)
+    painter.end()
+    return QIcon(pixmap)
+
+
+# Cache icons so they're built once
+_play_icon = None
+_stop_icon = None
+
+
+def _get_play_icon():
+    global _play_icon
+    if _play_icon is None:
+        _play_icon = _make_play_icon()
+    return _play_icon
+
+
+def _get_stop_icon():
+    global _stop_icon
+    if _stop_icon is None:
+        _stop_icon = _make_stop_icon()
+    return _stop_icon
+
+
+# Speaker colors — must match transcript_viewer.py and speaker_name_panel.py
+SPEAKER_COLORS = [
+    "#F1642E",  # blue
+    "#34C759",  # green
+    "#FDE676",  # peach
+    "#f5c2e7",  # pink
+    "#94e2d5",  # teal
+    "#F1642E",  # yellow
+    "#cba6f7",  # mauve
+    "#F1642E",  # red
+]
+
+
+def _format_time(seconds):
+    """Format seconds as HH:MM:SS."""
+    m, s = divmod(int(seconds), 60)
+    h, m = divmod(m, 60)
+    return f"{h:02d}:{m:02d}:{s:02d}"
+
+
+def _display_speaker(speaker_id, speaker_names):
+    """Return display name for a speaker, falling back to ID."""
+    if not speaker_id:
+        return ""
+    if speaker_names and speaker_id in speaker_names and speaker_names[speaker_id]:
+        return speaker_names[speaker_id]
+    return speaker_id
+
+
+class EditHistory:
+    """Undo/redo stack for segment text edits."""
+
+    def __init__(self, initial_text: str, max_depth: int = 20):
+        self._stack = [initial_text]
+        self._pos = 0
+        self._max_depth = max_depth
+
+    def current(self) -> str:
+        return self._stack[self._pos]
+
+    def original(self) -> str:
+        return self._stack[0]
+
+    def is_modified(self) -> bool:
+        return self._pos > 0
+
+    def can_undo(self) -> bool:
+        return self._pos > 0
+
+    def can_redo(self) -> bool:
+        return self._pos < len(self._stack) - 1
+
+    def push(self, text: str):
+        self._stack = self._stack[:self._pos + 1]
+        self._stack.append(text)
+        self._pos += 1
+        if len(self._stack) > self._max_depth + 1:
+            trim = len(self._stack) - self._max_depth - 1
+            self._stack = self._stack[trim:]
+            self._pos -= trim
+
+    def undo(self) -> str:
+        if self.can_undo():
+            self._pos -= 1
+        return self.current()
+
+    def redo(self) -> str:
+        if self.can_redo():
+            self._pos += 1
+        return self.current()
+
+
+class SegmentWidget(QWidget):
+    """A single transcript segment row: [play] [timestamp] [speaker] [text].
+
+    Supports:
+    - Play button to trigger audio playback
+    - Double-click text to edit inline
+    - Right-click context menu with "Вернуть исходный текст"
+    - Speaker label click to focus speaker name panel
+    """
+
+    play_requested = pyqtSignal(int)       # segment index
+    stop_requested = pyqtSignal()
+    text_edited = pyqtSignal(int, str)     # segment index, new text
+    text_reverted = pyqtSignal(int)        # segment index
+    speaker_clicked = pyqtSignal(str)      # speaker ID
+
+    def __init__(self, index, segment, speaker_color="#242841",
+                 speaker_name="", parent=None):
+        super().__init__(parent)
+        self._index = index
+        self._segment = segment
+        self._speaker_color = speaker_color
+        self._speaker_name = speaker_name
+        self._editing = False
+        self._playing = False
+        self._history = EditHistory(segment.text)
+        self._setup_ui()
+
+    def _setup_ui(self):
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(4, 2, 4, 2)
+        layout.setSpacing(6)
+
+        # Play button
+        self.play_btn = QPushButton()
+        self.play_btn.setObjectName("segmentPlayBtn")
+        self.play_btn.setFixedSize(26, 26)
+        self.play_btn.setIconSize(QSize(16, 16))
+        self.play_btn.setIcon(_get_play_icon())
+        self._apply_play_style()
+        self.play_btn.clicked.connect(self._on_play_clicked)
+        layout.addWidget(self.play_btn, 0, Qt.AlignmentFlag.AlignTop)
+
+        # Timestamp
+        start_ts = _format_time(self._segment.start)
+        end_ts = _format_time(self._segment.end)
+        self.timestamp_label = QLabel(f"[{start_ts} \u2192 {end_ts}]")
+        self.timestamp_label.setStyleSheet(
+            "color: #6c7086; font-family: Consolas; font-size: 11px;"
+        )
+        self.timestamp_label.setFixedWidth(160)
+        layout.addWidget(self.timestamp_label)
+
+        # Speaker label
+        display_name = self._speaker_name or self._segment.speaker
+        self.speaker_label = QLabel(f"{display_name}:" if display_name else "")
+        self.speaker_label.setStyleSheet(
+            f"color: {self._speaker_color}; font-weight: bold; font-size: 13px;"
+        )
+        if display_name:
+            self.speaker_label.setFixedWidth(120)
+            self.speaker_label.setCursor(Qt.CursorShape.PointingHandCursor)
+            self.speaker_label.mousePressEvent = self._on_speaker_clicked
+        else:
+            self.speaker_label.setFixedWidth(0)
+        layout.addWidget(self.speaker_label)
+
+        # Text label (normal mode)
+        self.text_label = QLabel(self._segment.text)
+        self.text_label.setStyleSheet("color: #242841; font-size: 13px;")
+        self.text_label.setWordWrap(True)
+        self.text_label.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
+        self.text_label.mouseDoubleClickEvent = self._on_text_double_clicked
+        self.text_label.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.text_label.customContextMenuRequested.connect(self._show_context_menu)
+        layout.addWidget(self.text_label, 1)
+
+        # Text edit (edit mode) — hidden by default
+        self.text_edit = QLineEdit()
+        self.text_edit.hide()
+        self.text_edit.returnPressed.connect(self._finish_edit)
+        layout.addWidget(self.text_edit, 1)
+
+        # Edit indicator
+        self.edit_indicator = QLabel("\u270e")  # pencil icon
+        self.edit_indicator.setStyleSheet("color: #F1642E; font-size: 12px;")
+        self.edit_indicator.setFixedWidth(16)
+        self.edit_indicator.setToolTip("Этот фрагмент был изменён")
+        self.edit_indicator.setVisible(bool(self._segment.original_text))
+        layout.addWidget(self.edit_indicator)
+
+    def update_speaker(self, speaker_names):
+        """Update the displayed speaker name."""
+        display = _display_speaker(self._segment.speaker, speaker_names)
+        if display:
+            self.speaker_label.setText(f"{display}:")
+            self.speaker_label.setFixedWidth(120)
+        else:
+            self.speaker_label.setText("")
+            self.speaker_label.setFixedWidth(0)
+
+    def _apply_play_style(self):
+        self.play_btn.setStyleSheet(
+            "QPushButton#segmentPlayBtn { border-radius: 13px; "
+            "background-color: #1e6650; "
+            "border: 1px solid #2d9b75; padding: 0; "
+            "min-height: 0; min-width: 0; max-height: 26px; max-width: 26px; }"
+            "QPushButton#segmentPlayBtn:hover { background-color: #2d9b75; }"
+        )
+
+    def _apply_stop_style(self):
+        self.play_btn.setStyleSheet(
+            "QPushButton#segmentPlayBtn { border-radius: 13px; "
+            "background-color: #7d2a2a; "
+            "border: 1px solid #b34d4d; padding: 0; "
+            "min-height: 0; min-width: 0; max-height: 26px; max-width: 26px; }"
+            "QPushButton#segmentPlayBtn:hover { background-color: #b34d4d; }"
+        )
+
+    def set_playing(self, playing):
+        """Update play button state."""
+        self._playing = playing
+        if playing:
+            self.play_btn.setIcon(_get_stop_icon())
+            self._apply_stop_style()
+        else:
+            self.play_btn.setIcon(_get_play_icon())
+            self._apply_play_style()
+
+    def _on_play_clicked(self):
+        if self._playing:
+            self.stop_requested.emit()
+        else:
+            self.play_requested.emit(self._index)
+
+    def _on_speaker_clicked(self, event):
+        if self._segment.speaker:
+            self.speaker_clicked.emit(self._segment.speaker)
+
+    def _on_text_double_clicked(self, event):
+        self._start_edit()
+
+    def _start_edit(self):
+        if self._editing:
+            return
+        self._editing = True
+        self.text_edit.setText(self.text_label.text())
+        self.text_label.hide()
+        self.text_edit.show()
+        self.text_edit.setFocus()
+        self.text_edit.selectAll()
+
+    def _finish_edit(self):
+        if not self._editing:
+            return
+        self._editing = False
+        new_text = self.text_edit.text().strip()
+        if new_text and new_text != self._history.current():
+            self._history.push(new_text)
+            self.text_label.setText(new_text)
+            self.text_edited.emit(self._index, new_text)
+            self.edit_indicator.setVisible(self._history.is_modified())
+        self.text_edit.hide()
+        self.text_label.show()
+
+    def cancel_edit(self):
+        """Cancel editing without saving."""
+        if not self._editing:
+            return
+        self._editing = False
+        self.text_edit.hide()
+        self.text_label.show()
+
+    def undo(self):
+        if self._history.can_undo():
+            text = self._history.undo()
+            self.text_label.setText(text)
+            self.edit_indicator.setVisible(self._history.is_modified())
+            self.text_edited.emit(self._index, text)
+
+    def redo(self):
+        if self._history.can_redo():
+            text = self._history.redo()
+            self.text_label.setText(text)
+            self.edit_indicator.setVisible(self._history.is_modified())
+            self.text_edited.emit(self._index, text)
+
+    def _show_context_menu(self, pos):
+        menu = QMenu(self)
+
+        edit_action = QAction("Изменить текст", self)
+        edit_action.triggered.connect(self._start_edit)
+        menu.addAction(edit_action)
+
+        if self._history.can_undo():
+            undo_action = QAction("Отменить", self)
+            undo_action.triggered.connect(self.undo)
+            menu.addAction(undo_action)
+
+        if self._history.can_redo():
+            redo_action = QAction("Повторить", self)
+            redo_action.triggered.connect(self.redo)
+            menu.addAction(redo_action)
+
+        if self._history.is_modified():
+            revert_action = QAction("Вернуть исходный текст", self)
+            revert_action.triggered.connect(self._revert_to_original)
+            menu.addAction(revert_action)
+
+        menu.exec(self.text_label.mapToGlobal(pos))
+
+    def _revert_to_original(self):
+        original = self._history.original()
+        self._history = EditHistory(original)
+        self.text_label.setText(original)
+        self.edit_indicator.setVisible(False)
+        self.text_reverted.emit(self._index)
+
+    def highlight_match(self, start, end):
+        """Briefly flash the segment to show the match."""
+        self.setStyleSheet("background-color: #D0D5DD;")
+        from PyQt6.QtCore import QTimer
+        QTimer.singleShot(1500, lambda: self.setStyleSheet(""))
+
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key.Key_Escape and self._editing:
+            self.cancel_edit()
+        else:
+            super().keyPressEvent(event)
