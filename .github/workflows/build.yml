@@ -44,7 +44,11 @@ jobs:
   macos:
     strategy:
       matrix:
-        os: [macos-15-intel, macos-15]
+        include:
+          - os: macos-15
+            suffix: AppleSilicon
+          - os: macos-15-intel
+            suffix: Intel
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -57,12 +61,14 @@ jobs:
         run: python3 -c "from app.main_window import MainWindow; from app.recording.mac_audio_capture import MacDualAudioCapture; print('macOS import OK')"
       - name: Build macOS app and DMG
         run: bash packaging/build_macos.sh
+      - name: Name installer by architecture
+        run: mv release/SwimRocketMeetings.dmg release/SwimRocketMeetings-${{ matrix.suffix }}.dmg
       - name: Upload macOS installer
         uses: actions/upload-artifact@v4
         with:
           name: SwimRocket-macOS-${{ matrix.os }}
           path: |
-            release/SwimRocketMeetings.dmg
+            release/SwimRocketMeetings-${{ matrix.suffix }}.dmg
             docs/*macOS.pdf
 
   release:
