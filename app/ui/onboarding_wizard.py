@@ -143,6 +143,10 @@ class OnboardingWizard(QDialog):
             mac_help.setWordWrap(True)
             mac_help.setStyleSheet("color: #F1642E; font-size: 12px;")
             layout.addWidget(mac_help)
+            blackhole_button = QPushButton("Скачать BlackHole")
+            blackhole_button.clicked.connect(lambda: QDesktopServices.openUrl(
+                QUrl("https://existential.audio/blackhole/")))
+            layout.addWidget(blackhole_button)
         layout.addStretch()
         button = QPushButton("Перейти к приложению")
         button.setObjectName("recordButton")
