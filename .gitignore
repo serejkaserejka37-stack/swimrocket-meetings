@@ -21,3 +21,8 @@ CLAUDE.local.md
 docs/plans/
 nul
 temp.txt
+tests/colleague-profile/
+test-recordings/
+release/
+tools/
+*.log
