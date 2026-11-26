@@ -11,9 +11,9 @@ AppPublisher={#MyAppPublisher}
 DefaultDirName={localappdata}\Programs\SwimRocket Встречи
 DefaultGroupName=SwimRocket Встречи
 PrivilegesRequired=lowest
-OutputDir=release
+OutputDir=..\release
 OutputBaseFilename=SwimRocketMeetings-Setup
-SetupIconFile=resources\swimrocket.ico
+SetupIconFile=..\resources\swimrocket.ico
 UninstallDisplayIcon={app}\SwimRocketMeetings.exe
 Compression=lzma2
 SolidCompression=yes
@@ -24,7 +24,7 @@ DisableProgramGroupPage=yes
 Name: "russian"; MessagesFile: "compiler:Languages\Russian.isl"
 
 [Files]
-Source: "dist\SwimRocketMeetings\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\dist\SwimRocketMeetings\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 Name: "{autodesktop}\SwimRocket Встречи"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\_internal\resources\swimrocket.ico"
