@@ -187,13 +187,13 @@ def gemini_complete(prompt):
     key = _env_value("GEMINI_API_KEY")
     if not key:
         raise RuntimeError("Не настроен GEMINI_API_KEY")
-    model = _env_value("GEMINI_MODEL") or "gemini-3.5-flash-lite"
+    model = _env_value("GEMINI_MODEL") or "gemini-3.5-flash"
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
     body = json.dumps({
         "contents": [{"parts": [{"text": prompt}]}],
         "generationConfig": {
             "temperature": 0.1,
-            "maxOutputTokens": 8000,
+            "maxOutputTokens": 16000,
             "responseMimeType": "application/json",
         },
     }).encode()
@@ -201,7 +201,7 @@ def gemini_complete(prompt):
         "x-goog-api-key": key,
         "content-type": "application/json",
     })
-    with urllib.request.urlopen(request, timeout=180) as response:
+    with urllib.request.urlopen(request, timeout=600) as response:
         data = json.loads(response.read())
     parts = []
     for candidate in data.get("candidates", []):
@@ -240,7 +240,7 @@ def llm_complete(prompt):
         "messages": [{"role": "user", "content": prompt}],
     }).encode()
     request = urllib.request.Request(url, data=body, headers=headers)
-    with urllib.request.urlopen(request, timeout=180) as response:
+    with urllib.request.urlopen(request, timeout=600) as response:
         data = json.loads(response.read())
     return "".join(block.get("text", "") for block in data.get("content", []))
 
@@ -266,7 +266,17 @@ def parse_json_object(raw):
 
 
 def analyze_meeting(request, transcript_text):
-    prompt = f"""Ты — помощник руководителя школы плавания SwimRocket. Разбери встречу строго по расшифровке. Не выдумывай решения, людей, задачи или сроки. Учитывай список участников и заметки. Если ответственный или срок прямо не названы — оставь пустую строку. Задачи формулируй как конкретное действие с проверяемым результатом.
+    prompt = f"""Ты — помощник руководителя школы плавания SwimRocket. Сделай исчерпывающий разбор встречи строго по расшифровке. Не выдумывай решения, людей, задачи или сроки. Если ответственный или срок прямо не названы — оставь пустую строку.
+
+Требования к задачам:
+- Выделяй ВСЕ отдельные поручения, даже небольшие: проверить, исправить, отправить, настроить, написать, создать, доделать, протестировать.
+- НЕ объединяй разные поручения в одну общую задачу. Если можно проверить выполнение отдельно — это отдельная задача.
+- Не включай уже выполненные действия в новые задачи, но учитывай их в тезисах.
+- Каждая задача должна быть конкретным действием с проверяемым результатом, без общих формулировок «добить», «проработать».
+- Ответственного ставь только если он назван или однозначно понятен из фразы; иначе пустая строка.
+- Срок сохраняй как прозвучал, не вычисляй и не придумывай.
+- Не ограничивай количество задач несколькими штуками. Длинную встречу разбирай по всему тексту, включая конец.
+- В тезисы выноси главные темы, а не список мелких поручений.
 
 Название, указанное пользователем: {request.get('name', '')}
 Участники, указанные пользователем: {request.get('participants', '')}
@@ -281,7 +291,7 @@ def analyze_meeting(request, transcript_text):
   "participants": ["имена или роли реальных участников"],
   "key_points": ["ключевой тезис"],
   "decisions": ["принятое решение"],
-  "tasks": [{{"task": "действие", "assignee": "ответственный", "deadline": "срок как прозвучал", "result": "ожидаемый результат", "priority": "Средний"}}],
+  "tasks": [{{"task": "конкретное действие", "assignee": "ответственный", "deadline": "срок как прозвучал", "result": "ожидаемый результат", "priority": "Средний"}}],
   "open_questions": ["незакрытый вопрос"]
 }}
 Если какого-то раздела нет, верни для него пустой список."""

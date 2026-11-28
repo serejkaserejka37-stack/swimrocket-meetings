@@ -35,6 +35,12 @@ FEEDBACK_FILE = os.path.join(VAULT, "40 Операционка",
 MSK = dt.timezone(dt.timedelta(hours=3))
 JOBS = "/root/SwimRocket/meeting_processor/jobs"
 MEETING_SERVER = "/root/SwimRocket/meeting_processor/server"
+REANALYZE = os.path.join(MEETING_SERVER, "reanalyze_job.py")
+APPLY_REANALYSIS = os.path.join(MEETING_SERVER, "apply_reanalysis.py")
+REANALYSIS_TRIGGERS = (
+    "картина не полная", "неполная картина", "неполный разбор", "мало задач",
+    "не нравится анализ", "плохой разбор", "слабый разбор", "не полный анализ",
+)
 TOKEN = None
 
 
@@ -395,6 +401,79 @@ def publish_obsidian(job_id, msg=None):
         say(f"⚠️ Не удалось отправить встречу в Obsidian: {str(exc)[:300]}")
 
 
+def is_reanalysis_request(text):
+    body = (text or "").lower()
+    if body.startswith(FEEDBACK_PREFIX):
+        body = body[len(FEEDBACK_PREFIX):]
+    return any(trigger in body for trigger in REANALYSIS_TRIGGERS)
+
+
+def find_reanalysis_job(message):
+    chat_id = (message.get("chat") or {}).get("id")
+    reply = message.get("reply_to_message") or {}
+    reply_id = reply.get("message_id")
+    candidates = []
+    if not os.path.isdir(JOBS):
+        return None
+    for directory in os.listdir(JOBS):
+        job_dir = os.path.join(JOBS, directory)
+        request_path = os.path.join(job_dir, "request.json")
+        result_path = os.path.join(job_dir, "result.json")
+        if not os.path.isfile(request_path) or not os.path.isfile(result_path):
+            continue
+        try:
+            with open(request_path, encoding="utf-8") as f:
+                request = json.load(f)
+            if int(request.get("chat_id", 0)) != int(chat_id):
+                continue
+            if reply_id:
+                with open(result_path, encoding="utf-8") as f:
+                    result = json.load(f)
+                if str(reply_id) not in str(result.get("telegram_status", "")):
+                    continue
+            candidates.append((os.path.getmtime(result_path), directory))
+        except Exception:
+            continue
+    if not candidates:
+        return None
+    candidates.sort(reverse=True)
+    return candidates[0][1]
+
+
+def handle_reanalysis(message):
+    chat_id = (message.get("chat") or {}).get("id")
+    job_id = find_reanalysis_job(message)
+    if not job_id:
+        say_to(chat_id, "Не нашёл встречу для уточнения. Ответьте на сообщение с разбором.")
+        return
+    say_to(chat_id, "Понял, делаю более подробный разбор этой встречи. Это займёт несколько минут.")
+    job_dir = os.path.join(JOBS, job_id)
+    success = False
+    for model in ("gemini-3.8-flash", "gemini-3.5-flash"):
+        try:
+            result = subprocess.run(
+                [PY, REANALYZE, job_dir, model],
+                capture_output=True, text=True, timeout=900,
+            )
+            if result.returncode == 0:
+                success = True
+                break
+            error = (result.stderr or result.stdout or "ошибка модели")[-1500:]
+        except Exception as exc:
+            error = str(exc)[:1500]
+        with open(os.path.join(job_dir, "reanalysis_error.log", ), "a", encoding="utf-8") as handle:
+            handle.write(f"{model}: {error}\n")
+    if not success:
+        say_to(chat_id, "⚠️ Не удалось повторить разбор. Попробуйте позже — исходная версия сохранена.")
+        return
+    result = subprocess.run([PY, APPLY_REANALYSIS, job_dir],
+                            capture_output=True, text=True, timeout=300)
+    if result.returncode != 0:
+        say_to(chat_id, "⚠️ Разбор готов, но не удалось отправить его. Исходная версия сохранена.")
+        return
+    say_to(chat_id, "✅ Отправил уточнённый разбор с большим количеством деталей и задач.")
+
+
 def main():
     offset = 0
     if os.path.exists(OFFSET_FILE):
@@ -419,6 +498,8 @@ def main():
                     low = text.lower()
                     if low in ("/start", "start") or low.startswith("/start@"):
                         handle_start(m)
+                    elif is_reanalysis_request(low):
+                        handle_reanalysis(m)
                     elif chat_id == CHAT_ID and KEYWORD in low:
                         handle_command()
                     elif chat_id == CHAT_ID and low.startswith(FEEDBACK_PREFIX):

@@ -157,8 +157,8 @@ class Handler(BaseHTTPRequestHandler):
                     "client_id": client_id,
                     "owner_id": user["user_id"],
                     "chat_id": int(user["chat_id"]),
-                    "allow_obsidian": False,
-                    "allow_tasks": False,
+                    "allow_obsidian": int(user["chat_id"]) == 678675695,
+                    "allow_tasks": int(user["chat_id"]) == 678675695,
                     "send_telegram": True,
                     "audio": dict(data.get("audio") or {}),
                 })

@@ -266,7 +266,7 @@ def test_gemini_provider_sends_prompt_and_returns_json_text(monkeypatch):
     assert "models/gemini-test-flash:generateContent" in captured["url"]
     assert captured["body"]["contents"][0]["parts"][0]["text"] == "Разбери встречу"
     assert captured["body"]["generationConfig"]["responseMimeType"] == "application/json"
-    assert captured["timeout"] == 180
+    assert captured["timeout"] == 600
 
 
 def test_gemini_empty_response_is_an_error(monkeypatch):
